@@ -12,11 +12,13 @@ python web_app.py
 
 然后在浏览器打开 `http://127.0.0.1:8765`。首页上方提供四类紧凑的虚构示例，一点即可填入下方表单；也可从空白表单手动填写全部 14 个字段。填写后直接进入确认页，仍可按类别返回修改，确认后才提交评估。页面展示审批额度、规则解释和目标额度诊断。本地运行默认仅监听本机，程序不保存申请记录。若 8765 端口已被占用，可用 `python web_app.py --port 8766`，再打开对应端口。
 
+页面右上角可在中文与 English 之间切换。切换仅改变前端文字，不改变输入资料、CLIPS 规则或计算结果；语言偏好保存在当前浏览器。英文诊断以结构化规则编号和数值生成，不把条件模拟表述为已经获批。
+
 前端使用 Python 标准库提供本地网页服务；除了原有的 `clipspy`，不需要再安装 Web 框架。直接双击 `static/index.html` 无法调用规则接口，必须先启动 `web_app.py`。
 
 ## 云端公开演示
 
-项目包含 `render.yaml`、`.python-version` 和 `/healthz` 健康检查，已准备好作为 Render Web Service 部署。具体步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。目前尚未发布到公网；需要由项目成员连接 Git 仓库并在 Render 创建服务。公开展示只可使用虚构资料，切勿输入真实个人信用信息。
+项目包含 `render.yaml`、`.python-version` 和 `/healthz` 健康检查，已作为 Render Web Service 部署：[公开演示网站](https://bnpl-expert-demo-2kx9.onrender.com)。部署与维护步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。公开展示只可使用虚构资料，切勿输入真实个人信用信息。
 
 ## Setup
 

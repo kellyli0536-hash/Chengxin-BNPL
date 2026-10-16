@@ -11,32 +11,38 @@
   <body>
     <header class="site-header">
       <div class="header-inner">
-        <a class="brand" href="/" aria-label="返回首页">
-          <span class="brand-mark" aria-hidden="true">橙</span>
-          <span class="brand-name">橙信<span class="brand-sub">先用后付实验室</span></span>
+        <a class="brand" href="/" aria-label="返回首页" data-i18n-aria="home">
+          <span class="brand-mark" aria-hidden="true" data-i18n="brandMark">橙</span>
+          <span class="brand-name"><span data-i18n="brandName">橙信</span><span class="brand-sub" data-i18n="brandSub">先用后付实验室</span></span>
         </a>
-        <span class="header-tag">CDS521 · 课堂原型</span>
+        <div class="header-actions">
+          <span class="header-tag" data-i18n="courseTag">CDS521 · 课堂原型</span>
+          <div class="language-switch" role="group" aria-label="语言选择" data-i18n-aria="languageChoice">
+            <button type="button" data-language="zh" aria-pressed="true">中文</button>
+            <button type="button" data-language="en" aria-pressed="false">English</button>
+          </div>
+        </div>
       </div>
     </header>
 
     <main class="main-shell">
       <section class="page-intro" aria-labelledby="page-title">
         <div class="intro-kicker"><span class="kicker-line"></span> BNPL EXPERT SYSTEM</div>
-        <h1 id="page-title">从申请资料，到清晰的额度决定。</h1>
-        <p>选择顶部虚构示例，或在下方手动填写用户信息。提交前可核对修改；系统会展示规则、CF 计算及最终额度。</p>
+        <h1 id="page-title" data-i18n="headline">从申请资料，到清晰的额度决定。</h1>
+        <p data-i18n="intro">选择顶部虚构示例，或在下方手动填写用户信息。提交前可核对修改；系统会展示规则、CF 计算及最终额度。</p>
         <div class="demo-notice" role="note">
-          <strong>公开演示提醒</strong>
-          <span>请仅使用虚构测试数据，不要输入真实个人或征信资料。提交后，资料会发送至演示服务器即时计算；本程序不建立申请记录。</span>
+          <strong data-i18n="noticeTitle">公开演示提醒</strong>
+          <span data-i18n="noticeBody">请仅使用虚构测试数据，不要输入真实个人或征信资料。提交后，资料会发送至演示服务器即时计算；本程序不建立申请记录。</span>
         </div>
       </section>
 
       <div class="workspace">
-        <aside class="journey" aria-label="办理进度">
-          <div class="journey-title">办理流程</div>
+        <aside class="journey" aria-label="办理进度" data-i18n-aria="progressAria">
+          <div class="journey-title" data-i18n="progressTitle">办理流程</div>
           <ol id="progress-list" class="progress-list"></ol>
           <div class="journey-note">
             <span class="note-icon" aria-hidden="true">i</span>
-            <p>本页面仅供课程演示，不构成真实授信决定；请勿填写真实个人资料。</p>
+            <p data-i18n="journeyNote">本页面仅供课程演示，不构成真实授信决定；请勿填写真实个人资料。</p>
           </div>
         </aside>
 
@@ -53,8 +59,8 @@
     </main>
 
     <footer class="site-footer">
-      <span>规则引擎 CLIPS · Python 集成</span>
-      <span>课堂演示，不构成真实授信决定</span>
+      <span data-i18n="footerTech">规则引擎 CLIPS · Python 集成</span>
+      <span data-i18n="footerNotice">课堂演示，不构成真实授信决定</span>
     </footer>
   </body>
 </html>

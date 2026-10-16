@@ -66,6 +66,19 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("下一步：核对资料", source)
         self.assertIn("selectedProfile: null", source)
 
+    def test_bilingual_interface_assets_are_served(self):
+        status, content = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        html = content.decode("utf-8")
+        self.assertIn('data-language="zh"', html)
+        self.assertIn('data-language="en"', html)
+        status, content = self.request("GET", "/app.js")
+        self.assertEqual(status, 200)
+        source = content.decode("utf-8")
+        self.assertIn("Choose a scenario or enter details", source)
+        self.assertIn("Target proof tree", source)
+        self.assertIn("captureDraft()", source)
+
     def test_health_check(self):
         status, content = self.request("GET", "/healthz")
         self.assertEqual(status, 200)

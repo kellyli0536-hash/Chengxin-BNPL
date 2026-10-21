@@ -132,6 +132,32 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("补充真实资料", result["conclusion"])
         self.assertEqual(result["improvement_paths"], [])
 
+    def test_batch_evaluation_preserves_user_ids_and_isolates_invalid_rows(self):
+        rows = [
+            {"user_id": "DEMO-001", "applicant": applicant()},
+            {"user_id": "DEMO-002", "applicant": applicant(age=-1)},
+            {"user_id": "DEMO-003", "applicant": applicant(external_credit_score=430)},
+        ]
+        status, content = self.request("POST", "/api/batch-evaluate", {"rows": rows})
+        self.assertEqual(status, 200)
+        results = json.loads(content)["results"]
+        self.assertEqual([item["user_id"] for item in results], [row["user_id"] for row in rows])
+        self.assertEqual([item["status"] for item in results], ["ok", "error", "ok"])
+        self.assertEqual(results[0]["result"]["approved_limit"], 1000)
+        self.assertEqual(results[2]["result"]["approved_limit"], 0)
+
+    def test_batch_rejects_duplicate_ids_and_more_than_100_rows(self):
+        row = {"user_id": "same", "applicant": applicant()}
+        status, _ = self.request("POST", "/api/batch-evaluate", {"rows": [row, row]})
+        self.assertEqual(status, 400)
+        status, _ = self.request("POST", "/api/batch-evaluate", {"rows": [row] * 101})
+        self.assertEqual(status, 400)
+
+    def test_fictional_batch_csv_is_served(self):
+        status, content = self.request("GET", "/fictional_batch_100.csv")
+        self.assertEqual(status, 200)
+        self.assertIn(b"DEMO-100", content)
+
     def test_invalid_input_returns_validation_error(self):
         status, content = self.request("POST", "/api/evaluate", {"applicant": applicant(age=-1)})
         self.assertEqual(status, 400)

@@ -155,6 +155,8 @@ const pageText = {
     brandSub: "先用后付实验室", courseTag: "CDS521 · 课堂原型", languageChoice: "语言选择",
     headline: "从申请资料，到清晰的额度决定。",
     intro: "选择顶部虚构示例，或在下方手动填写用户信息。提交前可核对修改；系统会展示规则、CF 计算及最终额度。",
+    batchShortcutAria: "跳转到批量规则测试", batchShortcutKicker: "批量规则测试 · 独立入口",
+    batchShortcutTitle: "上传 CSV，快速查看 100 位用户的额度结果", batchShortcutAction: "前往批量测试 ↗",
     noticeTitle: "公开演示提醒",
     noticeBody: "请仅使用虚构测试数据，不要输入真实个人或征信资料。提交后，资料会发送至演示服务器即时计算；本程序不建立申请记录。",
     progressAria: "办理进度", progressTitle: "办理流程",
@@ -166,6 +168,8 @@ const pageText = {
     brandName: "Chengxin", brandSub: "Buy Now, Pay Later Lab", courseTag: "CDS521 · Classroom prototype",
     languageChoice: "Choose a language", headline: "From application details to a clear credit-limit decision.",
     intro: "Choose a fictional example above or enter an applicant's details below. Review and edit the information before submission; the system then shows the rules, CF calculation, and final limit.",
+    batchShortcutAria: "Jump to batch rule testing", batchShortcutKicker: "Batch rule test · Separate workflow",
+    batchShortcutTitle: "Upload a CSV to review limits for up to 100 fictional users", batchShortcutAction: "Go to batch test ↗",
     noticeTitle: "Public demo notice",
     noticeBody: "Use fictional test data only. Do not enter real personal or credit information. Submitted details are sent to the demo server for immediate evaluation; this application does not store applicant records.",
     progressAria: "Application progress", progressTitle: "Application steps",
@@ -218,6 +222,7 @@ function setLanguage(language) {
   state.language = language;
   try { localStorage.setItem("chengxin-language", language); } catch (_) { /* Storage may be unavailable. */ }
   syncStaticLanguage();
+  window.dispatchEvent(new Event("chengxin-language-change"));
   render();
 }
 function captureDraft() {

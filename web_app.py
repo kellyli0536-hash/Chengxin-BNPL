@@ -21,10 +21,14 @@ from bnpl_expert import evaluate_dict
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 MAX_REQUEST_BYTES = 64 * 1024
+MAX_BATCH_REQUEST_BYTES = 256 * 1024
+MAX_BATCH_ROWS = 100
 ASSETS = {
     "/": (STATIC / "index.html", "text/html; charset=utf-8"),
     "/styles.css": (STATIC / "styles.css", "text/css; charset=utf-8"),
     "/app.js": (STATIC / "app.js", "text/javascript; charset=utf-8"),
+    "/batch.js": (STATIC / "batch.js", "text/javascript; charset=utf-8"),
+    "/fictional_batch_100.csv": (ROOT / "examples" / "fictional_batch_100.csv", "text/csv; charset=utf-8"),
 }
 
 
@@ -74,7 +78,7 @@ class BNPLHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         path = urlsplit(self.path).path
-        if path not in {"/api/evaluate", "/api/diagnose"}:
+        if path not in {"/api/evaluate", "/api/diagnose", "/api/batch-evaluate"}:
             self._json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
             return
         if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
@@ -84,12 +88,35 @@ class BNPLHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             length = 0
-        if length <= 0 or length > MAX_REQUEST_BYTES:
+        size_limit = MAX_BATCH_REQUEST_BYTES if path == "/api/batch-evaluate" else MAX_REQUEST_BYTES
+        if length <= 0 or length > size_limit:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "请求内容为空或过大。"})
             return
         try:
             body = json.loads(self.rfile.read(length))
-            if not isinstance(body, dict) or not isinstance(body.get("applicant"), dict):
+            if not isinstance(body, dict):
+                raise ValueError("请求内容必须是对象。")
+            if path == "/api/batch-evaluate":
+                rows = body.get("rows")
+                if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_BATCH_ROWS:
+                    raise ValueError("每批必须包含 1 至 100 条资料。")
+                seen = set()
+                results = []
+                for row in rows:
+                    if not isinstance(row, dict) or not isinstance(row.get("applicant"), dict):
+                        raise ValueError("每条记录必须包含 applicant 对象。")
+                    user_id = row.get("user_id")
+                    if not isinstance(user_id, str) or not 1 <= len(user_id) <= 64 or user_id in seen:
+                        raise ValueError("每批用户号必须唯一，且长度为 1 至 64 个字符。")
+                    seen.add(user_id)
+                    try:
+                        result = evaluate_dict(row["applicant"])
+                        results.append({"user_id": user_id, "status": "ok", "result": result})
+                    except (TypeError, ValueError, AttributeError) as exc:
+                        results.append({"user_id": user_id, "status": "error", "error": str(exc)})
+                self._json(HTTPStatus.OK, {"results": results})
+                return
+            if not isinstance(body.get("applicant"), dict):
                 raise ValueError("请提供申请人资料。")
             if path == "/api/evaluate":
                 result = evaluate_dict(body["applicant"])

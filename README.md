@@ -1,5 +1,11 @@
 # BNPL CLIPS Expert System
 
+## Batch classroom test (100 fictional cases)
+
+The workbench includes a separate batch-test section below the individual evaluation flow. Its deterministic [fictional CSV sample](examples/fictional_batch_100.csv) loads automatically, so **Run batch evaluation** works immediately without an upload. You may still download the sample or choose/drop a different fictional CSV. The sample contains 100 distinct fictional IDs and all 14 input fields. Empty cells mean unavailable data, not zero. The server evaluates each row with the same CLIPS rules as the individual flow and returns the ID, decision, final limit, and any hard-rule or evidence-cap ID. Invalid rows are reported individually. Select one result to run the existing target-limit diagnosis for that case; the 100 cases are not automatically diagnosed.
+
+Regenerate the sample with `python -m tools.generate_batch_demo` from the project root. The batch endpoint accepts 1–100 records per request and does not store applicant records. Use fictional test data only; this is not a real credit decision or a production load test.
+
 This prototype integrates the agreed BNPL rules with Python through CLIPSPy.
 
 ## 浏览器前端

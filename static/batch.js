@@ -126,7 +126,7 @@
     ${evaluated.map((item, index) => {
       const result = item.result;
       return `<tr><td>${escape(item.user_id)}</td><td>${item.status === "ok" ? (result.evaluation_type === "limit-review" ? say("老用户", "Existing") : say("新用户", "New")) : "—"}</td>
-        <td>${item.status === "ok" ? (en() ? escape({ rejected: "Rejected", "conditional-approval": "Conditional approval", approved: "Approved", suspend: "Suspended" }[result.decision] || result.decision) : escape({ rejected: "拒绝", "conditional-approval": "有条件通过", approved: "通过", suspend: "暂停" }[result.decision] || result.decision)) : say("资料错误", "Invalid")}</td>
+        <td>${item.status === "ok" ? (en() ? escape({ rejected: "Rejected", "conditional-approval": "Conditional approval", approved: "Approved", suspended: "Suspended" }[result.decision] || result.decision) : escape({ rejected: "拒绝", "conditional-approval": "有条件通过", approved: "通过", suspended: "暂停" }[result.decision] || result.decision)) : say("资料错误", "Invalid")}</td>
         <td class="batch-limit">${item.status === "ok" ? escape(result.approved_limit.toLocaleString()) : "—"}</td>
         <td>${item.status === "ok" ? escape(result.hard_decision?.rule_id || result.tier_cap?.rule_id || "—") : escape(item.error)}</td>
         <td>${item.status === "ok" ? `<button type="button" class="batch-diagnose" data-index="${index}">${say("查看", "View")}</button>` : "—"}</td></tr>`;

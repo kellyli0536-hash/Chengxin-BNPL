@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,12 @@ class Applicant:
         missing = sorted(required - data.keys())
         if missing:
             raise ValueError(f"Missing required fields: {', '.join(missing)}")
+        unknown = sorted(data.keys() - cls.__dataclass_fields__.keys())
+        if unknown:
+            raise ValueError(f"Unknown fields: {', '.join(unknown)}")
+        nulls = sorted(name for name in required if data.get(name) is None)
+        if nulls:
+            raise ValueError(f"Required fields cannot be null: {', '.join(nulls)}")
 
         values = {field: data.get(field) for field in cls.__dataclass_fields__}
         applicant = cls(**values)
@@ -71,22 +78,40 @@ class Applicant:
             raise ValueError("identity_verified must be true or false")
         if not isinstance(self.age, int) or isinstance(self.age, bool) or self.age < 0:
             raise ValueError("age must be a non-negative integer")
-        if self.linked_card_type.lower() not in {"debit", "credit", "prepaid", "none"}:
+        if (not isinstance(self.linked_card_type, str)
+                or self.linked_card_type.lower() not in {"debit", "credit", "prepaid", "none"}):
             raise ValueError("linked_card_type must be Debit, Credit, Prepaid, or None")
-        if not isinstance(self.account_age_months, int) or self.account_age_months < 0:
+        if (not isinstance(self.account_age_months, int) or isinstance(self.account_age_months, bool)
+                or self.account_age_months < 0):
             raise ValueError("account_age_months must be a non-negative integer")
-        if self.device_stability.lower() not in {"stable", "changing", "abnormal"}:
+        if (not isinstance(self.device_stability, str)
+                or self.device_stability.lower() not in {"stable", "changing", "abnormal"}):
             raise ValueError("device_stability must be Stable, Changing, or Abnormal")
 
-        optional_non_negative = {
-            "average_monthly_spending": self.average_monthly_spending,
+        # Counts must be whole numbers; amounts and rates must be finite numbers.
+        # Booleans are rejected explicitly because Python treats them as ints.
+        optional_counts = {
             "completed_order_count": self.completed_order_count,
             "consecutive_on_time_repayments": self.consecutive_on_time_repayments,
             "adverse_credit_incidents_6m": self.adverse_credit_incidents_6m,
         }
-        for name, value in optional_non_negative.items():
+        for name, value in optional_counts.items():
+            if value is not None and not _is_whole(value):
+                raise ValueError(f"{name} must be a non-negative whole number or null")
             if value is not None and value < 0:
-                raise ValueError(f"{name} must be non-negative or null")
+                raise ValueError(f"{name} must be a non-negative whole number or null")
+
+        optional_amounts = {
+            "average_monthly_spending": self.average_monthly_spending,
+            "repayment_fulfilment_rate": self.repayment_fulfilment_rate,
+            "current_credit_limit": self.current_credit_limit,
+            "available_credit_limit": self.available_credit_limit,
+        }
+        for name, value in optional_amounts.items():
+            if value is not None and not _is_finite_number(value):
+                raise ValueError(f"{name} must be a finite number or null")
+        if self.average_monthly_spending is not None and self.average_monthly_spending < 0:
+            raise ValueError("average_monthly_spending must be non-negative or null")
 
         rate = self.repayment_fulfilment_rate
         if rate is not None and not 0 <= rate <= 1:
@@ -106,41 +131,87 @@ class Applicant:
                 raise ValueError("available_credit_limit cannot exceed current_credit_limit")
 
         if self.external_credit_score is not None:
-            if not isinstance(self.external_credit_score, int):
+            if not isinstance(self.external_credit_score, int) or isinstance(
+                self.external_credit_score, bool
+            ):
                 raise ValueError("external_credit_score must be an integer or null")
             if not 350 <= self.external_credit_score <= 950:
                 raise ValueError("external_credit_score must be between 350 and 950")
 
         if self.external_overdue_record is not None:
             allowed = {"none", "minor", "moderate", "serious"}
-            if self.external_overdue_record.lower() not in allowed:
+            if (not isinstance(self.external_overdue_record, str)
+                    or self.external_overdue_record.lower() not in allowed):
                 raise ValueError(
                     "external_overdue_record must be None, Minor, Moderate, Serious, or null"
                 )
 
 
-def applicable_positive_max(applicant: Applicant) -> float:
-    """Maximum positive CF for applicable groups with available input values."""
-    maximum = 0.0
-    # Each group can contribute at most one positive soft rule.
-    groups = (
-        (applicant.linked_card_type is not None, 0.45),
-        (applicant.account_age_months is not None, 0.35),
-        (applicant.average_monthly_spending is not None, 0.30),
-        (applicant.completed_order_count is not None, 0.30),
-        (applicant.device_stability is not None, 0.25),
-        (applicant.external_credit_score is not None, 0.55),
-        (applicant.external_overdue_record is not None, 0.30),
-    )
-    maximum += sum(value for applicable, value in groups if applicable)
+def _is_whole(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    return isinstance(value, float) and math.isfinite(value) and value.is_integer()
+
+
+def _is_finite_number(value: Any) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+# Soft-rule fields that can carry negative evidence. When one is missing it is
+# scored at its worst value (the rule in brackets fires), so leaving it blank can
+# never beat reporting a bad value.
+WORST_CASE_FIELDS = {
+    "external_overdue_record": ("SR-25", "all"),
+    "repayment_fulfilment_rate": ("SR-10", "limit-review"),
+}
+
+
+def worst_case_fields(applicant: Applicant) -> list[str]:
+    return [
+        field for field, (_, scope) in WORST_CASE_FIELDS.items()
+        if getattr(applicant, field) is None
+        and scope in ("all", applicant.evaluation_type)
+    ]
+
+
+def _positive_groups(applicant: Applicant) -> list[tuple[str, float]]:
+    """(field, largest positive CF) for each soft-rule group that applies."""
+    groups = [
+        ("linked_card_type", 0.45),
+        ("account_age_months", 0.35),
+        ("average_monthly_spending", 0.30),
+        ("completed_order_count", 0.30),
+        ("device_stability", 0.25),
+        ("external_credit_score", 0.55),
+        ("external_overdue_record", 0.30),
+    ]
     if applicant.evaluation_type == "limit-review":
-        if applicant.repayment_fulfilment_rate is not None:
-            maximum += 0.65
-        if applicant.consecutive_on_time_repayments is not None:
-            maximum += 0.55
-        if applicant.credit_limit_utilisation_rate is not None:
-            maximum += 0.30
-    return round(maximum, 4)
+        groups += [
+            ("repayment_fulfilment_rate", 0.65),
+            ("consecutive_on_time_repayments", 0.55),
+            ("current_credit_limit", 0.30),  # utilisation group
+        ]
+    return groups
+
+
+def applicable_positive_max(applicant: Applicant) -> float:
+    """CF denominator: groups with a value, plus groups scored at worst case."""
+    imputed = set(worst_case_fields(applicant))
+    return round(sum(
+        value for field, value in _positive_groups(applicant)
+        if getattr(applicant, field) is not None or field in imputed
+    ), 4)
+
+
+def observed_positive_max(applicant: Applicant) -> float:
+    """Evidence coverage numerator: only groups whose value was actually provided."""
+    return round(sum(
+        value for field, value in _positive_groups(applicant)
+        if getattr(applicant, field) is not None
+    ), 4)
 
 
 def normalized_cf(evidence: list[dict[str, Any]], maximum: float) -> tuple[float, float]:
@@ -206,17 +277,28 @@ def _decision_for_limit(limit: float) -> str:
     return "approved"
 
 
-def evidence_cap_ceiling(applicant: Applicant, cap_limit: int) -> float:
-    """Highest limit the evidence cap allows for this applicant.
+HARD_RULE_FIELDS = {
+    "adverse_credit_incidents_6m": "HR-03",
+    "external_credit_score": "HR-05",
+}
 
-    New applicants are held to the cap. For an existing user the cap only
-    blocks increases that the available evidence cannot support: a limit the
-    user already holds is not cut merely because some inputs are missing.
-    Reductions still come from the CF-based limit and from hard rules.
+
+def data_gaps(applicant: Applicant) -> list[dict[str, str]]:
+    """Missing inputs that were not simply ignored.
+
+    `hard-rule-failed`: a red line could not be checked, so it counts as failed.
+    `worst-case`: a negative-evidence field was scored at its worst value.
     """
-    if applicant.evaluation_type == "new-application":
-        return cap_limit
-    return max(cap_limit, applicant.current_credit_limit or 0)
+    gaps = [
+        {"field": field, "rule_id": rule_id, "treatment": "hard-rule-failed"}
+        for field, rule_id in HARD_RULE_FIELDS.items()
+        if getattr(applicant, field) is None
+    ]
+    gaps += [
+        {"field": field, "rule_id": WORST_CASE_FIELDS[field][0], "treatment": "worst-case"}
+        for field in worst_case_fields(applicant)
+    ]
+    return gaps
 
 
 def evaluate(applicant: Applicant) -> dict[str, Any]:
@@ -252,14 +334,13 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
     if hard_decisions:
         hard = hard_decisions[0]
         approved_limit = 0
-        decision = hard["action"]
+        decision = {"reject": "rejected", "suspend": "suspended"}[hard["action"]]
         limit_action = "set-to-zero"
         combined_cf = None
         raw_cf_sum = None
         positive_cf_max = None
         evidence_coverage = None
         tier_cap = None
-        cap_ceiling = None
         cap_applied = False
         cf_based_limit = None
         evidence = []
@@ -273,7 +354,7 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
             if applicant.evaluation_type == "new-application"
             else EXISTING_USER_FULL_POSITIVE_MAX
         )
-        evidence_coverage = round(positive_cf_max / full_max, 4)
+        evidence_coverage = round(observed_positive_max(applicant) / full_max, 4)
         environment.find_template("evidence-coverage").assert_fact(
             ratio=evidence_coverage
         )
@@ -290,8 +371,7 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
             "maximum_limit": int(cap["maximum-limit"]),
             "reason": cap["reason"],
         }
-        cap_ceiling = evidence_cap_ceiling(applicant, tier_cap["maximum_limit"])
-        approved_limit = min(cf_based_limit, cap_ceiling)
+        approved_limit = min(cf_based_limit, tier_cap["maximum_limit"])
         cap_applied = approved_limit < cf_based_limit
         decision = _decision_for_limit(approved_limit)
         if applicant.evaluation_type == "new-application":
@@ -316,9 +396,9 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
         "evidence_coverage": evidence_coverage,
         "cf_based_limit": cf_based_limit,
         "tier_cap": tier_cap,
-        "cap_ceiling": cap_ceiling,
         "cap_applied": cap_applied,
         "hard_decision": hard_decisions[0] if hard_decisions else None,
+        "data_gaps": data_gaps(applicant),
         "triggered_soft_rules": evidence,
         "credit_limit_utilisation_rate": applicant.credit_limit_utilisation_rate,
         "fired_rule_count": fired_count,

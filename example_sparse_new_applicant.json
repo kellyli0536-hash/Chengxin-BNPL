@@ -11,6 +11,6 @@
   "device_stability": "Stable",
   "current_credit_limit": null,
   "available_credit_limit": null,
-  "external_credit_score": null,
-  "external_overdue_record": null
+  "external_credit_score": 820,
+  "external_overdue_record": "None"
 }

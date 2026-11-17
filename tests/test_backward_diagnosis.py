@@ -31,13 +31,11 @@ class BackwardDiagnosisTests(unittest.TestCase):
         data["available_credit_limit"] = None
         data["average_monthly_spending"] = None
         data["completed_order_count"] = None
-        data["external_credit_score"] = None
-        data["external_overdue_record"] = None
         result = diagnose(data, 10000)
         self.assertEqual(result["status"], "blocked-by-evidence-cap")
         self.assertEqual(result["cf_based_limit"], 10000)
-        self.assertEqual(result["tier_cap"]["maximum_limit"], 1000)
-        self.assertIn("external_credit_score", result["missing_evidence_fields"])
+        self.assertEqual(result["tier_cap"]["maximum_limit"], 5000)
+        self.assertIn("average_monthly_spending", result["missing_evidence_fields"])
         self.assertEqual(result["single_change_scenarios"], [])
         self.assertEqual(result["combined_change_scenarios"], [])
 
@@ -94,8 +92,7 @@ class BackwardDiagnosisTests(unittest.TestCase):
         data.update(current_credit_limit=None, available_credit_limit=None,
                     linked_card_type="None", account_age_months=1,
                     average_monthly_spending=None, completed_order_count=None,
-                    device_stability="Changing", external_credit_score=None,
-                    external_overdue_record=None)
+                    device_stability="Changing", external_overdue_record=None)
         result = diagnose(data, 10000)
         self.assertEqual(result["status"], "blocked-by-evidence-cap")
         self.assertEqual([node["status"] for node in result["goal_proof_tree"]["children"]],
@@ -105,15 +102,43 @@ class BackwardDiagnosisTests(unittest.TestCase):
     def test_sparse_existing_user_is_blocked_by_evidence_cap(self):
         data = example_user()
         data.update(average_monthly_spending=None, completed_order_count=None,
-                    external_credit_score=None, external_overdue_record=None,
                     current_credit_limit=1000, available_credit_limit=500)
         result = diagnose(data, 10000)
         self.assertEqual(result["status"], "blocked-by-evidence-cap")
-        self.assertEqual(result["cap_ceiling"], 1000)
+        self.assertEqual(result["tier_cap"]["maximum_limit"], 5000)
         self.assertEqual(set(result["missing_evidence_fields"]),
-                         {"average_monthly_spending", "completed_order_count",
-                          "external_credit_score", "external_overdue_record"})
+                         {"average_monthly_spending", "completed_order_count"})
         self.assertEqual(result["goal_proof_tree"]["children"][1]["status"], "unsatisfied")
+
+    def test_coverage_status_always_matches_its_threshold(self):
+        for limit, target in ((5000, 5000), (12000, 10000)):
+            data = example_user()
+            data.update(average_monthly_spending=None, completed_order_count=None,
+                        external_overdue_record=None, repayment_fulfilment_rate=None,
+                        consecutive_on_time_repayments=None,
+                        current_credit_limit=limit, available_credit_limit=limit / 2)
+            with self.subTest(limit=limit, target=target):
+                result = diagnose(data, target)
+                sg2 = result["goal_proof_tree"]["children"][1]
+                meets = sg2["current_value"] >= sg2["required_value"]
+                self.assertEqual(sg2["status"] == "satisfied", meets)
+
+    def test_missing_hard_rule_field_blocks_diagnosis(self):
+        data = example_user()
+        data["adverse_credit_incidents_6m"] = None
+        result = diagnose(data, 10000)
+        self.assertEqual(result["status"], "blocked-by-hard-rule")
+        hard = result["goal_proof_tree"]["children"][0]
+        self.assertEqual(hard["status"], "unsatisfied")
+        statuses = {node["id"]: node["status"] for node in hard["children"]}
+        self.assertEqual(statuses["HR-03"], "unsatisfied")
+
+    def test_diagnosis_reports_worst_case_scoring(self):
+        data = example_user()
+        data["external_overdue_record"] = None
+        result = diagnose(data, 10000)
+        self.assertIn({"field": "external_overdue_record", "rule_id": "SR-25",
+                       "treatment": "worst-case"}, result["data_gaps"])
 
     def test_already_achieved_target(self):
         data = example_user()

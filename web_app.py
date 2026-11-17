@@ -32,6 +32,10 @@ ASSETS = {
 }
 
 
+def _reject_constant(name: str):
+    raise ValueError(f"{name} is not a valid JSON number.")
+
+
 class BNPLHandler(BaseHTTPRequestHandler):
     def _security_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
@@ -93,7 +97,7 @@ class BNPLHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "请求内容为空或过大。"})
             return
         try:
-            body = json.loads(self.rfile.read(length))
+            body = json.loads(self.rfile.read(length), parse_constant=_reject_constant)
             if not isinstance(body, dict):
                 raise ValueError("请求内容必须是对象。")
             if path == "/api/batch-evaluate":

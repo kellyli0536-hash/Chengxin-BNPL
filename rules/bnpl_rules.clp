@@ -28,8 +28,8 @@
 
 ;; Evidence sufficiency is assessed after CF for both new applications and
 ;; limit reviews. Coverage = applicable positive CF maximum / full maximum
-;; (2.50 for a new applicant, 4.00 for an existing user). For an existing
-;; user the cap only blocks increases; it never cuts a limit already held.
+;; (2.50 for a new applicant, 4.00 for an existing user). The final limit is
+;; the smaller of the CF-based limit and the cap, for every user.
 (deftemplate evidence-coverage
   (slot ratio (type FLOAT)))
 
@@ -151,6 +151,52 @@
     (action suspend)
     (reason "External credit score is 450 or below."))))
 
+;; A red line that cannot be checked is treated as failed: missing data must
+;; never produce a better result than a bad value.
+(defrule HR-03-new-adverse-record-missing
+  (declare (salience 95))
+  (context (evaluation-type new-application))
+  (not (numeric-input (name adverse-credit-incidents-6m)))
+  (not (hard-decision))
+  =>
+  (assert (hard-decision
+    (rule-id HR-03)
+    (action reject)
+    (reason "The adverse-credit record for the last six months is unavailable, so HR-03 cannot be checked."))))
+
+(defrule HR-03-existing-adverse-record-missing
+  (declare (salience 95))
+  (context (evaluation-type limit-review))
+  (not (numeric-input (name adverse-credit-incidents-6m)))
+  (not (hard-decision))
+  =>
+  (assert (hard-decision
+    (rule-id HR-03)
+    (action suspend)
+    (reason "The adverse-credit record for the last six months is unavailable, so HR-03 cannot be checked."))))
+
+(defrule HR-05-new-external-score-missing
+  (declare (salience 95))
+  (context (evaluation-type new-application))
+  (not (numeric-input (name external-credit-score)))
+  (not (hard-decision))
+  =>
+  (assert (hard-decision
+    (rule-id HR-05)
+    (action reject)
+    (reason "The external credit score is unavailable, so HR-05 cannot be checked."))))
+
+(defrule HR-05-existing-external-score-missing
+  (declare (salience 95))
+  (context (evaluation-type limit-review))
+  (not (numeric-input (name external-credit-score)))
+  (not (hard-decision))
+  =>
+  (assert (hard-decision
+    (rule-id HR-05)
+    (action suspend)
+    (reason "The external credit score is unavailable, so HR-05 cannot be checked."))))
+
 (defrule HR-04-new-abnormal-device
   (declare (salience 90))
   (context (evaluation-type new-application))
@@ -191,11 +237,11 @@
   (assert (evidence (rule-id SR-02) (cf 0.25)
     (reason "Identity is verified and a debit card is linked."))))
 
-(defrule SR-03-no-linked-card
-  (categorical-input (name linked-card-type) (value none))
+(defrule SR-03-no-bank-card
+  (categorical-input (name linked-card-type) (value ?v&none|prepaid))
   =>
   (assert (evidence (rule-id SR-03) (cf -0.25)
-    (reason "No payment card is linked."))))
+    (reason "No credit or debit card is linked (none or prepaid only)."))))
 
 (defrule SR-04-established-account
   (numeric-input (name account-age-months) (value ?m&:(>= ?m 12)))
@@ -246,6 +292,14 @@
   =>
   (assert (evidence (rule-id SR-10) (cf -0.50)
     (reason "Repayment fulfilment rate is below 90 percent."))))
+
+;; A missing fulfilment rate is scored at its worst value (same rule ID).
+(defrule SR-10-fulfilment-unavailable
+  (context (evaluation-type limit-review))
+  (not (numeric-input (name repayment-fulfilment-rate)))
+  =>
+  (assert (evidence (rule-id SR-10) (cf -0.50)
+    (reason "Repayment fulfilment rate is unavailable; scored at its worst value."))))
 
 (defrule SR-11-high-spending
   (numeric-input (name average-monthly-spending) (value ?v&:(>= ?v 2000)))
@@ -342,6 +396,13 @@
   =>
   (assert (evidence (rule-id SR-25) (cf -0.70)
     (reason "External overdue record is serious."))))
+
+;; A missing external overdue record is scored at its worst value (same rule ID).
+(defrule SR-25-overdue-record-unavailable
+  (not (categorical-input (name external-overdue-record)))
+  =>
+  (assert (evidence (rule-id SR-25) (cf -0.70)
+    (reason "External overdue record is unavailable; scored as serious (worst value)."))))
 
 (defrule SR-26-no-external-overdue
   (categorical-input (name external-overdue-record) (value none))

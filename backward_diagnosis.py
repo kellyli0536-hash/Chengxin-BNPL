@@ -47,14 +47,14 @@ def goal_proof_tree(applicant: Applicant, current: dict[str, Any], target: int) 
         ("HR-01", "实名认证通过", applicant.identity_verified,
          applicant.identity_verified),
         ("HR-02", "年龄达到18岁", applicant.age, applicant.age >= 18),
-        ("HR-03", "近半年失信次数少于2次", applicant.adverse_credit_incidents_6m,
-         None if applicant.adverse_credit_incidents_6m is None
-         else applicant.adverse_credit_incidents_6m < 2),
+        ("HR-03", "近半年失信记录已取得且少于2次", applicant.adverse_credit_incidents_6m,
+         applicant.adverse_credit_incidents_6m is not None
+         and applicant.adverse_credit_incidents_6m < 2),
         ("HR-04", "设备状态不异常", applicant.device_stability,
          applicant.device_stability.lower() != "abnormal"),
-        ("HR-05", "外部信用分高于450分", applicant.external_credit_score,
-         None if applicant.external_credit_score is None
-         else applicant.external_credit_score > 450),
+        ("HR-05", "外部信用分已取得且高于450分", applicant.external_credit_score,
+         applicant.external_credit_score is not None
+         and applicant.external_credit_score > 450),
     )
     hard_children = [
         {
@@ -69,8 +69,8 @@ def goal_proof_tree(applicant: Applicant, current: dict[str, Any], target: int) 
         "id": "SG-1", "label": "未触发硬规则", "operator": "AND",
         "status": "unsatisfied" if hard_blocked else "satisfied",
         "current_value": current["hard_decision"], "rule_ids": [x[0] for x in hard_checks],
-        "reason": "硬规则优先，不能用软规则加分绕过。" if hard_blocked
-                  else "当前资料未触发硬规则；未知字段不等于已验证为良好。",
+        "reason": "硬规则优先，不能用软规则加分绕过；硬规则所需字段缺失也视为未通过。" if hard_blocked
+                  else "硬规则所需字段均已取得，且未触发红线。",
         "children": hard_children,
     }
 
@@ -90,12 +90,10 @@ def goal_proof_tree(applicant: Applicant, current: dict[str, Any], target: int) 
     else:
         required_coverage = {1000: 0.0, 5000: 0.70, 10000: 0.90}[target]
         reason = "缺失字段必须补充真实资料；补齐不保证CF达标。"
-        if applicant.evaluation_type == "limit-review":
-            reason += "老用户已持有的额度不因资料缺失被下调，但提额受覆盖率封顶限制。"
         coverage = {
             "id": "SG-2", "label": "信息覆盖率允许目标档位",
             "operator": "weighted-threshold",
-            "status": "satisfied" if current["cap_ceiling"] >= target else "unsatisfied",
+            "status": "satisfied" if current["tier_cap"]["maximum_limit"] >= target else "unsatisfied",
             "current_value": current["evidence_coverage"],
             "required_value": required_coverage,
             "rule_ids": [current["tier_cap"]["rule_id"]],
@@ -285,7 +283,7 @@ def diagnose(data: dict[str, Any], target_limit: int = 10000) -> dict[str, Any]:
         "evidence_coverage": current["evidence_coverage"],
         "cf_based_limit": current["cf_based_limit"],
         "tier_cap": current["tier_cap"],
-        "cap_ceiling": current["cap_ceiling"],
+        "data_gaps": current["data_gaps"],
         "goal_proof_tree": goal_proof_tree(applicant, current, target_limit),
     }
     tree = base["goal_proof_tree"]
@@ -332,7 +330,7 @@ def diagnose(data: dict[str, Any], target_limit: int = 10000) -> dict[str, Any]:
                 "资料补齐不保证提额。"
             ),
             "conclusion": (
-                f"当前信息覆盖率不足，额度最高被封顶至{current['cap_ceiling']:,.0f}元；"
+                f"当前信息覆盖率不足，额度最高被封顶至{current['tier_cap']['maximum_limit']:,}元；"
                 "须补充真实资料并重新审核，补齐后仍需满足CF门槛，不能保证提额。"
             ),
             "single_change_scenarios": [],

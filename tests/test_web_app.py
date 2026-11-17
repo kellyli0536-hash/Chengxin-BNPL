@@ -20,8 +20,8 @@ def applicant(**changes):
         "device_stability": "Stable",
         "current_credit_limit": None,
         "available_credit_limit": None,
-        "external_credit_score": None,
-        "external_overdue_record": None,
+        "external_credit_score": 820,
+        "external_overdue_record": "None",
     }
     data.update(changes)
     return data
@@ -109,8 +109,8 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(status, 200)
         result = json.loads(content)["result"]
         self.assertEqual(result["combined_cf"], 1.0)
-        self.assertEqual(result["approved_limit"], 1000)
-        self.assertEqual(result["tier_cap"]["rule_id"], "EC-01")
+        self.assertEqual(result["approved_limit"], 5000)
+        self.assertEqual(result["tier_cap"]["rule_id"], "EC-02")
 
     def test_hard_rule_rejects(self):
         status, content = self.request(
@@ -143,8 +143,22 @@ class WebAppTests(unittest.TestCase):
         results = json.loads(content)["results"]
         self.assertEqual([item["user_id"] for item in results], [row["user_id"] for row in rows])
         self.assertEqual([item["status"] for item in results], ["ok", "error", "ok"])
-        self.assertEqual(results[0]["result"]["approved_limit"], 1000)
+        self.assertEqual(results[0]["result"]["approved_limit"], 5000)
         self.assertEqual(results[2]["result"]["approved_limit"], 0)
+        self.assertEqual(results[2]["result"]["decision"], "rejected")
+
+    def test_nan_and_infinity_are_rejected_in_json(self):
+        for literal in ("NaN", "Infinity", "-Infinity"):
+            body = json.dumps({"applicant": applicant()}).replace(
+                '"average_monthly_spending": null', f'"average_monthly_spending": {literal}')
+            with self.subTest(literal=literal):
+                connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=10)
+                connection.request("POST", "/api/evaluate", body=body.encode(),
+                                   headers={"Content-Type": "application/json"})
+                response = connection.getresponse()
+                response.read()
+                connection.close()
+                self.assertEqual(response.status, 400)
 
     def test_batch_rejects_duplicate_ids_and_more_than_100_rows(self):
         row = {"user_id": "same", "applicant": applicant()}

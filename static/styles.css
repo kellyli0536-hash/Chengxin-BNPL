@@ -289,3 +289,4 @@ h1 { margin: 8px 0 8px; font-size: clamp(27px, 3.3vw, 42px); line-height: 1.22; 
   html { scroll-behavior: auto; }
   .persona-card { transition: none; }
 }
+.hint-small { font-size: 12px; }

@@ -26,8 +26,10 @@
   (slot cf (type FLOAT))
   (slot reason (type STRING)))
 
-;; Evidence sufficiency is assessed only for new applications after CF.
-;; The full positive CF maximum for a new applicant is 2.50.
+;; Evidence sufficiency is assessed after CF for both new applications and
+;; limit reviews. Coverage = applicable positive CF maximum / full maximum
+;; (2.50 for a new applicant, 4.00 for an existing user). For an existing
+;; user the cap only blocks increases; it never cuts a limit already held.
 (deftemplate evidence-coverage
   (slot ratio (type FLOAT)))
 
@@ -37,23 +39,20 @@
   (slot reason (type STRING)))
 
 (defrule EC-01-low-evidence-coverage
-  (context (evaluation-type new-application))
   (evidence-coverage (ratio ?r&:(< ?r 0.70)))
   (not (hard-decision))
   =>
   (assert (tier-cap (rule-id EC-01) (maximum-limit 1000)
-    (reason "Evidence coverage is below 70 percent; new-applicant limit is capped at CNY 1,000."))))
+    (reason "Evidence coverage is below 70 percent; the CF-based limit is capped at CNY 1,000."))))
 
 (defrule EC-02-medium-evidence-coverage
-  (context (evaluation-type new-application))
   (evidence-coverage (ratio ?r&:(and (>= ?r 0.70) (< ?r 0.90))))
   (not (hard-decision))
   =>
   (assert (tier-cap (rule-id EC-02) (maximum-limit 5000)
-    (reason "Evidence coverage is between 70 and 90 percent; new-applicant limit is capped at CNY 5,000."))))
+    (reason "Evidence coverage is between 70 and 90 percent; the CF-based limit is capped at CNY 5,000."))))
 
 (defrule EC-03-sufficient-evidence-coverage
-  (context (evaluation-type new-application))
   (evidence-coverage (ratio ?r&:(>= ?r 0.90)))
   (not (hard-decision))
   =>
@@ -287,7 +286,7 @@
     (reason "Three to five consecutive repayments were made on time."))))
 
 (defrule SR-17-one-adverse-incident
-  (numeric-input (name adverse-credit-incidents-6m) (value 1))
+  (numeric-input (name adverse-credit-incidents-6m) (value ?n&:(= ?n 1)))
   =>
   (assert (evidence (rule-id SR-17) (cf -0.35)
     (reason "One adverse credit incident occurred in the last six months."))))

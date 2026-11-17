@@ -502,7 +502,7 @@ function renderResult() {
         <div class="metric"><label>${tr("原始 CF / 适用满分", "Raw CF / applicable maximum")}</label><strong>${result.raw_cf_sum.toFixed(2)} / ${result.applicable_positive_cf_max.toFixed(2)}</strong></div>
         <div class="metric"><label>${tr("信息覆盖率", "Evidence coverage")}</label><strong>${formatPercent(result.evidence_coverage)}</strong></div>
       </div>
-      ${result.tier_cap ? `<div class="explain-row"><strong>${escapeHTML(result.tier_cap.rule_id)}</strong><span>${tr(`CF 对应额度 ${currency(result.cf_based_limit)}；新用户信息覆盖率最高允许 ${currency(result.tier_cap.maximum_limit)}。${result.cap_applied ? "本次已触发封顶。" : "本次未压低额度。"}`, `The CF-based limit is ${currency(result.cf_based_limit)}. Evidence coverage caps a new applicant at ${currency(result.tier_cap.maximum_limit)}. ${result.cap_applied ? "The cap reduced this result." : "The cap did not reduce this result."}`)}</span></div>` : ""}
+      ${result.tier_cap ? `<div class="explain-row"><strong>${escapeHTML(result.tier_cap.rule_id)}</strong><span>${tr(`CF 对应额度 ${currency(result.cf_based_limit)}；信息覆盖率最高允许 ${currency(result.cap_ceiling)}${result.evaluation_type === "limit-review" ? "（老用户已持有的额度不因资料缺失被下调）" : ""}。${result.cap_applied ? "本次已触发封顶。" : "本次未压低额度。"}`, `The CF-based limit is ${currency(result.cf_based_limit)}. Evidence coverage allows at most ${currency(result.cap_ceiling)}${result.evaluation_type === "limit-review" ? " (a limit an existing user already holds is not cut because of missing data)" : ""}. ${result.cap_applied ? "The cap reduced this result." : "The cap did not reduce this result."}`)}</span></div>` : ""}
       <div class="divider"></div><h3 class="minor-title">${tr("本次触发的软规则", "Soft rules triggered")}</h3>
       ${result.triggered_soft_rules.length ? `<ul class="rules-list">${result.triggered_soft_rules.map(rule => `
         <li><span class="rule-id">${escapeHTML(rule.rule_id)}</span><span>${escapeHTML(ruleFor(rule.rule_id, rule.reason))}</span>
@@ -554,7 +554,6 @@ function renderDiagnosis(diagnosis) {
       : "No hard rule is triggered by the available data. An unknown value is not proof of good standing.";
     if (node.id === "SG-2") {
       if (node.status === "not-evaluated") return "A hard rule blocked the application, so the evidence cap was not assessed.";
-      if (node.status === "not-applicable") return "The new-applicant evidence cap does not apply to existing-user limit reviews.";
       return "Missing fields must be filled with genuine information. Doing so does not guarantee that the CF threshold will be met.";
     }
     if (node.status === "not-evaluated") return "A hard rule blocked the application, so CF was not calculated.";
@@ -591,7 +590,7 @@ function renderDiagnosis(diagnosis) {
     if (state.language !== "en") return diagnosis.conclusion || diagnosis.message;
     if (diagnosis.status === "blocked-by-hard-rule") return "A hard rule is triggered. The current limit is CNY 0; soft-rule gains cannot override it.";
     if (diagnosis.status === "goal-achieved") return `The current approved limit already reaches ${currency(diagnosis.target_limit)}. No improvements are needed.`;
-    if (diagnosis.status === "blocked-by-evidence-cap") return `Current evidence coverage caps the limit at ${currency(diagnosis.tier_cap.maximum_limit)}. Provide genuine missing information and reassess; meeting the coverage requirement alone does not guarantee a higher limit.`;
+    if (diagnosis.status === "blocked-by-evidence-cap") return `Current evidence coverage caps the limit at ${currency(diagnosis.cap_ceiling)}. Provide genuine missing information and reassess; meeting the coverage requirement alone does not guarantee a higher limit.`;
     const first = (diagnosis.improvement_paths || [])[0];
     if (first) return `One tested path requires the following change${first.changes.length === 1 ? "" : "s"}: ${first.changes.map(change => changeText(change)).join("; ")}. With all other details unchanged, reassessment under the current rules would reach a simulated limit of ${currency(first.simulated_limit)}. This is not a guarantee of an actual increase.`;
     return "None of the tested one- or two-field changes reaches the target. Other paths may still be possible.";

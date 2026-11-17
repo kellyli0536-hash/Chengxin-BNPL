@@ -198,12 +198,25 @@ def _limit_for_cf(cf: float) -> tuple[str, int]:
     return "approved", 10000
 
 
-def _decision_for_limit(limit: int) -> str:
+def _decision_for_limit(limit: float) -> str:
     if limit == 0:
         return "rejected"
     if limit == 1000:
         return "conditional-approval"
     return "approved"
+
+
+def evidence_cap_ceiling(applicant: Applicant, cap_limit: int) -> float:
+    """Highest limit the evidence cap allows for this applicant.
+
+    New applicants are held to the cap. For an existing user the cap only
+    blocks increases that the available evidence cannot support: a limit the
+    user already holds is not cut merely because some inputs are missing.
+    Reductions still come from the CF-based limit and from hard rules.
+    """
+    if applicant.evaluation_type == "new-application":
+        return cap_limit
+    return max(cap_limit, applicant.current_credit_limit or 0)
 
 
 def evaluate(applicant: Applicant) -> dict[str, Any]:
@@ -246,6 +259,7 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
         positive_cf_max = None
         evidence_coverage = None
         tier_cap = None
+        cap_ceiling = None
         cap_applied = False
         cf_based_limit = None
         evidence = []
@@ -260,28 +274,24 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
             else EXISTING_USER_FULL_POSITIVE_MAX
         )
         evidence_coverage = round(positive_cf_max / full_max, 4)
-        tier_cap = None
-        if applicant.evaluation_type == "new-application":
-            environment.find_template("evidence-coverage").assert_fact(
-                ratio=evidence_coverage
-            )
-            fired_count += environment.run()
-            caps = [
-                fact for fact in environment.facts()
-                if fact.template.name == "tier-cap"
-            ]
-            if len(caps) != 1:
-                raise RuntimeError(f"Expected exactly one evidence tier cap, got {len(caps)}")
-            cap = caps[0]
-            tier_cap = {
-                "rule_id": str(cap["rule-id"]),
-                "maximum_limit": int(cap["maximum-limit"]),
-                "reason": cap["reason"],
-            }
-        approved_limit = min(
-            cf_based_limit,
-            tier_cap["maximum_limit"] if tier_cap is not None else cf_based_limit,
+        environment.find_template("evidence-coverage").assert_fact(
+            ratio=evidence_coverage
         )
+        fired_count += environment.run()
+        caps = [
+            fact for fact in environment.facts()
+            if fact.template.name == "tier-cap"
+        ]
+        if len(caps) != 1:
+            raise RuntimeError(f"Expected exactly one evidence tier cap, got {len(caps)}")
+        cap = caps[0]
+        tier_cap = {
+            "rule_id": str(cap["rule-id"]),
+            "maximum_limit": int(cap["maximum-limit"]),
+            "reason": cap["reason"],
+        }
+        cap_ceiling = evidence_cap_ceiling(applicant, tier_cap["maximum_limit"])
+        approved_limit = min(cf_based_limit, cap_ceiling)
         cap_applied = approved_limit < cf_based_limit
         decision = _decision_for_limit(approved_limit)
         if applicant.evaluation_type == "new-application":
@@ -306,6 +316,7 @@ def evaluate(applicant: Applicant) -> dict[str, Any]:
         "evidence_coverage": evidence_coverage,
         "cf_based_limit": cf_based_limit,
         "tier_cap": tier_cap,
+        "cap_ceiling": cap_ceiling,
         "cap_applied": cap_applied,
         "hard_decision": hard_decisions[0] if hard_decisions else None,
         "triggered_soft_rules": evidence,

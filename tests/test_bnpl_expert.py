@@ -79,7 +79,9 @@ class BNPLExpertTests(unittest.TestCase):
         self.assertEqual(result["applicable_positive_cf_max"], 4.00)
         self.assertEqual(result["raw_cf_sum"], 4.00)
         self.assertEqual(result["combined_cf"], 1.00)
-        self.assertIsNone(result["tier_cap"])
+        self.assertEqual(result["evidence_coverage"], 1.0)
+        self.assertEqual(result["tier_cap"]["rule_id"], "EC-03")
+        self.assertEqual(result["approved_limit"], 10000)
 
     def test_sparse_new_user_is_capped_despite_perfect_cf(self):
         result = evaluate_dict(
@@ -182,6 +184,95 @@ class BNPLExpertTests(unittest.TestCase):
         ids = {item["rule_id"] for item in result["triggered_soft_rules"]}
         self.assertFalse(ids & {"SR-07", "SR-11", "SR-13", "SR-15", "SR-20", "SR-26"})
         self.assertEqual(result["applicable_positive_cf_max"], 1.05)
+
+    def test_evidence_cap_rules_fire_for_limit_reviews(self):
+        environment = clips.Environment()
+        environment.load(str(RULES_PATH))
+        environment.reset()
+        environment.find_template("context").assert_fact(
+            **{"evaluation-type": clips.Symbol("limit-review")}
+        )
+        environment.find_template("evidence-coverage").assert_fact(ratio=0.5)
+        environment.run()
+        caps = [fact for fact in environment.facts() if fact.template.name == "tier-cap"]
+        self.assertEqual([str(cap["rule-id"]) for cap in caps], ["EC-01"])
+
+    def test_sparse_existing_user_cannot_jump_to_top_limit(self):
+        result = evaluate_dict(
+            base_applicant(
+                average_monthly_spending=None,
+                completed_order_count=None,
+                external_credit_score=None,
+                external_overdue_record=None,
+                current_credit_limit=1000,
+                available_credit_limit=500,
+            )
+        )
+        self.assertEqual(result["combined_cf"], 1.0)
+        self.assertEqual(result["cf_based_limit"], 10000)
+        self.assertEqual(result["evidence_coverage"], 0.6375)
+        self.assertEqual(result["tier_cap"]["rule_id"], "EC-01")
+        self.assertEqual(result["approved_limit"], 1000)
+        self.assertEqual(result["limit_action"], "maintain")
+        self.assertTrue(result["cap_applied"])
+
+    def test_existing_user_with_zero_limit_and_no_history_is_capped_like_new_user(self):
+        sparse = dict(
+            repayment_fulfilment_rate=None,
+            average_monthly_spending=None,
+            completed_order_count=None,
+            consecutive_on_time_repayments=None,
+            external_credit_score=None,
+            external_overdue_record=None,
+            account_age_months=12,
+        )
+        existing = evaluate_dict(
+            base_applicant(current_credit_limit=0, available_credit_limit=0, **sparse)
+        )
+        new = evaluate_dict(base_applicant(**sparse))
+        self.assertEqual(existing["approved_limit"], 1000)
+        self.assertEqual(new["approved_limit"], 1000)
+
+    def test_cap_does_not_cut_a_limit_the_user_already_holds(self):
+        result = evaluate_dict(
+            base_applicant(
+                average_monthly_spending=None,
+                completed_order_count=None,
+                external_credit_score=None,
+                external_overdue_record=None,
+                current_credit_limit=5000,
+                available_credit_limit=2500,
+            )
+        )
+        self.assertEqual(result["tier_cap"]["maximum_limit"], 1000)
+        self.assertEqual(result["cap_ceiling"], 5000)
+        self.assertEqual(result["approved_limit"], 5000)
+        self.assertEqual(result["limit_action"], "maintain")
+
+    def test_low_cf_still_reduces_an_existing_limit_despite_cap_floor(self):
+        result = evaluate_dict(
+            base_applicant(
+                linked_card_type="None",
+                account_age_months=0,
+                device_stability="Changing",
+                repayment_fulfilment_rate=0.80,
+                consecutive_on_time_repayments=0,
+                average_monthly_spending=None,
+                completed_order_count=None,
+                external_credit_score=None,
+                external_overdue_record=None,
+                current_credit_limit=5000,
+                available_credit_limit=200,
+            )
+        )
+        self.assertEqual(result["cf_based_limit"], 0)
+        self.assertEqual(result["approved_limit"], 0)
+        self.assertEqual(result["limit_action"], "decrease")
+
+    def test_one_adverse_incident_fires_for_float_input(self):
+        result = evaluate_dict(base_applicant(adverse_credit_incidents_6m=1.0))
+        ids = {item["rule_id"] for item in result["triggered_soft_rules"]}
+        self.assertIn("SR-17", ids)
 
     def test_invalid_available_limit_is_rejected(self):
         with self.assertRaises(ValueError):

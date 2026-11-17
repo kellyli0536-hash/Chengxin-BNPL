@@ -58,7 +58,7 @@ class BackwardDiagnosisTests(unittest.TestCase):
         tree = result["goal_proof_tree"]
         self.assertEqual(tree["status"], "unsatisfied")
         self.assertEqual([node["status"] for node in tree["children"]],
-                         ["satisfied", "not-applicable", "unsatisfied"])
+                         ["satisfied", "satisfied", "unsatisfied"])
         self.assertEqual(tree["children"][2]["required_value"], 0.85)
         self.assertIn("注册时长达到12个月", result["conclusion"])
         self.assertTrue(all(path["verified_by_clips"] for path in result["improvement_paths"]))
@@ -101,6 +101,19 @@ class BackwardDiagnosisTests(unittest.TestCase):
         self.assertEqual([node["status"] for node in result["goal_proof_tree"]["children"]],
                          ["satisfied", "unsatisfied", "unsatisfied"])
         self.assertEqual(result["goal_proof_tree"]["children"][1]["required_value"], 0.9)
+
+    def test_sparse_existing_user_is_blocked_by_evidence_cap(self):
+        data = example_user()
+        data.update(average_monthly_spending=None, completed_order_count=None,
+                    external_credit_score=None, external_overdue_record=None,
+                    current_credit_limit=1000, available_credit_limit=500)
+        result = diagnose(data, 10000)
+        self.assertEqual(result["status"], "blocked-by-evidence-cap")
+        self.assertEqual(result["cap_ceiling"], 1000)
+        self.assertEqual(set(result["missing_evidence_fields"]),
+                         {"average_monthly_spending", "completed_order_count",
+                          "external_credit_score", "external_overdue_record"})
+        self.assertEqual(result["goal_proof_tree"]["children"][1]["status"], "unsatisfied")
 
     def test_already_achieved_target(self):
         data = example_user()

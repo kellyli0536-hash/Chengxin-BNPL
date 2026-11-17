@@ -57,7 +57,7 @@ The command prints a JSON decision containing:
 - final decision and approved limit;
 - combined certainty factor;
 - raw CF sum and applicable positive CF maximum;
-- new-applicant evidence coverage, CF-based limit, and evidence tier cap;
+- evidence coverage, CF-based limit, evidence tier cap, and cap ceiling;
 - hard decision, when one is triggered;
 - every triggered soft rule and its explanation;
 - derived credit-limit utilisation rate.
@@ -87,23 +87,26 @@ and 4.00 for an existing user. A hard rule skips CF calculation entirely.
 Account age from 1 through 5 months is neutral. The SR-05 positive interval is
 6 through 11 months.
 
-## New-applicant evidence tier cap
+## Evidence tier cap
 
 The CF formula and hard/soft rules are unchanged. After the CF-based limit is
-found, new applications receive an evidence-coverage cap from CLIPS rules
+found, every evaluation receives an evidence-coverage cap from CLIPS rules
 EC-01 through EC-03. Coverage is the applicant's applicable positive CF maximum
-divided by the complete new-applicant positive maximum of 2.50. It measures
-availability of the positive soft-rule input groups, not the quality of the
-values. Existing-user limit reviews do not receive this cap.
+divided by the complete positive maximum (2.50 for a new applicant, 4.00 for an
+existing user). It measures availability of the positive soft-rule input
+groups, not the quality of the values.
 
-| New-applicant evidence coverage | Maximum limit |
+| Evidence coverage | Maximum limit |
 | --- | ---: |
 | `< 0.70` | CNY 1,000 |
 | `0.70 to < 0.90` | CNY 5,000 |
 | `>= 0.90` | CNY 10,000 |
 
-The final limit is the smaller of the CF-based limit and the cap. The cap can
-only reduce a limit, never increase it. A hard rule still takes precedence and
+The final limit is the smaller of the CF-based limit and the cap ceiling. For
+a new applicant the ceiling is the cap. For an existing user the ceiling is the
+larger of the cap and the limit the user already holds: missing data blocks an
+increase but does not by itself cut an existing limit, while a low CF can still
+reduce it. The cap can only reduce a limit, never increase it. A hard rule still takes precedence and
 sets the limit to zero. These coverage thresholds are project policy choices,
 not empirically calibrated credit-risk thresholds. Missing inputs used only by
 hard rules, such as `adverse_credit_incidents_6m`, are not part of this coverage
@@ -142,8 +145,8 @@ python backward_diagnosis.py my_applicant.json --target 5000
 
 PyCharm 中可直接右键运行该文件。使用自己的资料时，在 **Run → Edit Configurations → Script parameters** 填 `my_applicant.json --target 10000`。
 
-诊断以目标额度为根节点生成 `goal_proof_tree`：硬规则通过、信息覆盖率允许目标档位（仅新用户）、CF 达到目标门槛，三项必须同时成立。即使新用户同时存在信息封顶与 CF 不足，证明树也会展示两处差距；硬规则阻断时 CF 标为“未评估”，不虚构为 0 分。`conclusion` 是面向前端的一句话结论，`improvement_paths` 列出已由 CLIPS 重算验证的条件性方案；原有返回字段继续保留。
+诊断以目标额度为根节点生成 `goal_proof_tree`：硬规则通过、信息覆盖率允许目标档位、CF 达到目标门槛，三项必须同时成立。即使同时存在信息封顶与 CF 不足，证明树也会展示两处差距；硬规则阻断时 CF 标为“未评估”，不虚构为 0 分。`conclusion` 是面向前端的一句话结论，`improvement_paths` 列出已由 CLIPS 重算验证的条件性方案；原有返回字段继续保留。
 
 系统对注册时长、完成订单数、连续按时还款次数、额度使用率、月均消费、履约率（老用户）和外部信用分作**单项条件模拟**。履约率、月均消费和外部信用分的变化明确标为假设情景。若没有任何单项变化达到目标，诊断会测试**不同字段的两项组合**，在 `combined_change_scenarios` 中列出具体需同时变化的两项条件。每个模拟都重新运行相同的CLIPS规则，只有实际达到目标额度才标记 `reaches_goal: true`。模拟结果不是当前达标状态，也不保证未来审批结果；双项测试未找到方案不代表不存在更复杂的改善路径。
 
-新用户若因信息覆盖率封顶而无法达到目标，诊断会返回 `blocked-by-evidence-cap` 和缺失的软规则输入字段。补充真实资料后须重新计算；补齐字段本身不保证提额。
+新用户或老用户若因信息覆盖率封顶而无法达到目标（老用户已持有的额度不会因此下调），诊断会返回 `blocked-by-evidence-cap` 和缺失的软规则输入字段。补充真实资料后须重新计算；补齐字段本身不保证提额。

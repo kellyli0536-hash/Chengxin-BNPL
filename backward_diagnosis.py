@@ -25,6 +25,22 @@ TARGET_CF = {1000: 0.40, 5000: 0.60, 10000: 0.85}
 DEFAULT_INPUT = Path(__file__).parent / "example_diagnosis_applicant.json"
 
 
+def coverage_fields(applicant: Applicant) -> list[tuple[str, str, float]]:
+    """Optional soft-rule inputs whose absence lowers evidence coverage."""
+    fields = [
+        ("average_monthly_spending", "月均消费", 0.30),
+        ("completed_order_count", "完成订单数", 0.30),
+        ("external_credit_score", "外部信用分", 0.55),
+        ("external_overdue_record", "外部逾期记录", 0.30),
+    ]
+    if applicant.evaluation_type == "limit-review":
+        fields += [
+            ("repayment_fulfilment_rate", "按时履约率", 0.65),
+            ("consecutive_on_time_repayments", "连续按时还款次数", 0.55),
+        ]
+    return fields
+
+
 def goal_proof_tree(applicant: Applicant, current: dict[str, Any], target: int) -> dict[str, Any]:
     """Explain the current goal through the same hard, cap, and CF gates as approval."""
     hard_checks = (
@@ -72,40 +88,28 @@ def goal_proof_tree(applicant: Applicant, current: dict[str, Any], target: int) 
             "candidate_path_ids": [],
         }
     else:
-        if applicant.evaluation_type == "new-application":
-            required_coverage = {1000: 0.0, 5000: 0.70, 10000: 0.90}[target]
-            coverage_fields = (
-                ("average_monthly_spending", "月均消费", 0.30),
-                ("completed_order_count", "完成订单数", 0.30),
-                ("external_credit_score", "外部信用分", 0.55),
-                ("external_overdue_record", "外部逾期记录", 0.30),
-            )
-            coverage = {
-                "id": "SG-2", "label": "信息覆盖率允许目标档位",
-                "operator": "weighted-threshold",
-                "status": ("satisfied" if current["tier_cap"]["maximum_limit"] >= target
-                           else "unsatisfied"),
-                "current_value": current["evidence_coverage"],
-                "required_value": required_coverage,
-                "rule_ids": [current["tier_cap"]["rule_id"]],
-                "reason": "缺失字段必须补充真实资料；补齐不保证CF达标。",
-                "children": [
-                    {
-                        "id": name, "label": label,
-                        "status": "unknown" if getattr(applicant, name) is None else "satisfied",
-                        "current_value": getattr(applicant, name),
-                        "coverage_weight": weight,
-                    }
-                    for name, label, weight in coverage_fields
-                ],
-            }
-        else:
-            coverage = {
-                "id": "SG-2", "label": "信息覆盖率允许目标档位", "operator": "weighted-threshold",
-                "status": "not-applicable", "current_value": None, "required_value": None,
-                "rule_ids": [], "reason": "老用户不适用新申请人的信息封顶机制。",
-                "children": [],
-            }
+        required_coverage = {1000: 0.0, 5000: 0.70, 10000: 0.90}[target]
+        reason = "缺失字段必须补充真实资料；补齐不保证CF达标。"
+        if applicant.evaluation_type == "limit-review":
+            reason += "老用户已持有的额度不因资料缺失被下调，但提额受覆盖率封顶限制。"
+        coverage = {
+            "id": "SG-2", "label": "信息覆盖率允许目标档位",
+            "operator": "weighted-threshold",
+            "status": "satisfied" if current["cap_ceiling"] >= target else "unsatisfied",
+            "current_value": current["evidence_coverage"],
+            "required_value": required_coverage,
+            "rule_ids": [current["tier_cap"]["rule_id"]],
+            "reason": reason,
+            "children": [
+                {
+                    "id": name, "label": label,
+                    "status": "unknown" if getattr(applicant, name) is None else "satisfied",
+                    "current_value": getattr(applicant, name),
+                    "coverage_weight": weight,
+                }
+                for name, label, weight in coverage_fields(applicant)
+            ],
+        }
 
         maximum = current["applicable_positive_cf_max"]
         required_raw = TARGET_CF[target] * maximum
@@ -281,6 +285,7 @@ def diagnose(data: dict[str, Any], target_limit: int = 10000) -> dict[str, Any]:
         "evidence_coverage": current["evidence_coverage"],
         "cf_based_limit": current["cf_based_limit"],
         "tier_cap": current["tier_cap"],
+        "cap_ceiling": current["cap_ceiling"],
         "goal_proof_tree": goal_proof_tree(applicant, current, target_limit),
     }
     tree = base["goal_proof_tree"]
@@ -311,17 +316,11 @@ def diagnose(data: dict[str, Any], target_limit: int = 10000) -> dict[str, Any]:
             "improvement_paths": [],
         }
 
-    # A higher CF cannot overcome the new-applicant evidence cap. Missing
-    # fields must be supplied with genuine data and evaluated again.
-    cap = current["tier_cap"]
+    # A higher CF cannot overcome the evidence cap. Missing fields must be
+    # supplied with genuine data and evaluated again.
     if coverage_goal["status"] == "unsatisfied":
         missing_fields = [
-            name for name in (
-                "average_monthly_spending",
-                "completed_order_count",
-                "external_credit_score",
-                "external_overdue_record",
-            )
+            name for name, _, _ in coverage_fields(applicant)
             if getattr(applicant, name) is None
         ]
         return {
@@ -333,7 +332,7 @@ def diagnose(data: dict[str, Any], target_limit: int = 10000) -> dict[str, Any]:
                 "资料补齐不保证提额。"
             ),
             "conclusion": (
-                f"当前信息覆盖率不足，额度最高被封顶至{cap['maximum_limit']:,}元；"
+                f"当前信息覆盖率不足，额度最高被封顶至{current['cap_ceiling']:,.0f}元；"
                 "须补充真实资料并重新审核，补齐后仍需满足CF门槛，不能保证提额。"
             ),
             "single_change_scenarios": [],
